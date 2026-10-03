@@ -1657,35 +1657,94 @@ function renderForecastView(region) {
 }
 
 // ── 資料載入 ──
+// ── 資料載入 (支援本地 Backend 與 GitHub Pages 靜態託管) ──
+const CWA_API_KEY = "CWA-55FDA6D3-A43C-4AE0-BB30-E62D5F684FB2";
+
 async function fetchWeather() {
   try {
-    const res = await fetch('/api/weather');
-    const json = await res.json();
-    if (json.status !== 'success') return;
-    weatherData = json.stations || [];
-    forecastDataMap = json.forecasts || {};
-    const sum = json.summary || {};
-    
-    document.getElementById('val-max-temp').textContent = (sum.max_temp != null && sum.max_temp !== '--') ? sum.max_temp : '--';
-    document.getElementById('val-min-temp').textContent = (sum.min_temp != null && sum.min_temp !== '--') ? sum.min_temp : '--';
-    document.getElementById('val-max-rain').textContent = (sum.max_rain != null && sum.max_rain !== '--') ? sum.max_rain : '--';
-    document.getElementById('val-max-wind').textContent = (sum.avg_wind != null && sum.avg_wind !== '--') ? sum.avg_wind : (sum.max_wind != null ? sum.max_wind : '--');
+    let json = null;
+    try {
+      const res = await fetch('/api/weather');
+      if (res.ok) json = await res.json();
+    } catch (e) {
+      json = null;
+    }
 
-    if (sum.max_temp_station) document.getElementById('station-max-temp').textContent = formatRegionName(sum.max_temp_station);
-    if (sum.min_temp_station) document.getElementById('station-min-temp').textContent = formatRegionName(sum.min_temp_station);
+    if (json && json.status === 'success') {
+      weatherData = json.stations || [];
+      forecastDataMap = json.forecasts || {};
+      const sum = json.summary || {};
+      
+      document.getElementById('val-max-temp').textContent = (sum.max_temp != null && sum.max_temp !== '--') ? sum.max_temp : '--';
+      document.getElementById('val-min-temp').textContent = (sum.min_temp != null && sum.min_temp !== '--') ? sum.min_temp : '--';
+      document.getElementById('val-max-rain').textContent = (sum.max_rain != null && sum.max_rain !== '--') ? sum.max_rain : '--';
+      document.getElementById('val-max-wind').textContent = (sum.avg_wind != null && sum.avg_wind !== '--') ? sum.avg_wind : (sum.max_wind != null ? sum.max_wind : '--');
 
-    // 渲染特報
-    const warnPanel = document.getElementById('warnings-panel');
-    const warnings = json.warnings || [];
-    warnPanel.innerHTML = warnings.slice(0, 3).map(w => `
-      <div class="warn-card">
-        <div class="warn-header">
-          <span class="warn-title">${w.title}</span>
-          <span class="warn-tag">${(w.tags || ['特報']).join(' · ')}</span>
+      if (sum.max_temp_station) document.getElementById('station-max-temp').textContent = formatRegionName(sum.max_temp_station);
+      if (sum.min_temp_station) document.getElementById('station-min-temp').textContent = formatRegionName(sum.min_temp_station);
+
+      const warnPanel = document.getElementById('warnings-panel');
+      const warnings = json.warnings || [];
+      warnPanel.innerHTML = warnings.slice(0, 3).map(w => `
+        <div class="warn-card">
+          <div class="warn-header">
+            <span class="warn-title">${w.title}</span>
+            <span class="warn-tag">${(w.tags || ['特報']).join(' · ')}</span>
+          </div>
+          <div class="warn-desc">${w.content || ''}</div>
         </div>
-        <div class="warn-desc">${w.content || ''}</div>
-      </div>
-    `).join('');
+      `).join('');
+      return;
+    }
+
+    // GitHub Pages 靜態託管降級機制：直接存取 CWA Open Data API
+    const cwaRes = await fetch(`https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0003-001?Authorization=${CWA_API_KEY}`);
+    const cwaJson = await cwaRes.json();
+    const rawStations = cwaJson.records?.Station || [];
+    
+    let maxTemp = -99, minTemp = 99, maxRain = 0, maxWind = 0;
+    let maxTempSt = '--', minTempSt = '--';
+
+    weatherData = rawStations.map(st => {
+      const geo = st.GeoInfo || {};
+      const elem = st.WeatherElement || {};
+      const lat = parseFloat(geo.Coordinates?.[0]?.StationLatitude || 23.5);
+      const lon = parseFloat(geo.Coordinates?.[0]?.StationLongitude || 121.0);
+      const temp = parseFloat(elem.AirTemperature || -99);
+      const humi = parseFloat(elem.RelativeHumidity || 70);
+      const wind = parseFloat(elem.WindSpeed || 0);
+      const rain = parseFloat(elem.Now?.Precipitation || 0);
+      const validTemp = (temp > -40 && temp < 55) ? temp : null;
+
+      if (validTemp != null) {
+        if (validTemp > maxTemp) { maxTemp = validTemp; maxTempSt = st.StationName; }
+        if (validTemp < minTemp) { minTemp = validTemp; minTempSt = st.StationName; }
+      }
+      if (rain > maxRain) maxRain = rain;
+      if (wind > maxWind) maxWind = wind;
+
+      return {
+        station_id: st.StationId,
+        station_name: st.StationName,
+        county: geo.CountyName || '臺灣',
+        town: geo.TownName || '',
+        latitude: lat,
+        longitude: lon,
+        temperature: validTemp,
+        humidity: humi > 0 ? humi : null,
+        wind_speed: wind >= 0 ? wind : null,
+        precipitation: rain >= 0 ? rain : 0,
+        weather: elem.Weather || '晴/多雲'
+      };
+    }).filter(s => s.latitude && s.longitude);
+
+    document.getElementById('val-max-temp').textContent = maxTemp > -50 ? maxTemp.toFixed(1) : '--';
+    document.getElementById('val-min-temp').textContent = minTemp < 50 ? minTemp.toFixed(1) : '--';
+    document.getElementById('val-max-rain').textContent = maxRain.toFixed(1);
+    document.getElementById('val-max-wind').textContent = maxWind.toFixed(1);
+    if (maxTempSt) document.getElementById('station-max-temp').textContent = formatRegionName(maxTempSt);
+    if (minTempSt) document.getElementById('station-min-temp').textContent = formatRegionName(minTempSt);
+
   } catch (err) {
     console.error('Weather fetch error:', err);
   }
@@ -1693,10 +1752,43 @@ async function fetchWeather() {
 
 async function fetchPm25() {
   try {
-    const res = await fetch('/api/pm25');
-    const json = await res.json();
-    if (json.status !== 'success') return;
-    pm25Data = json.stations || [];
+    let json = null;
+    try {
+      const res = await fetch('/api/pm25');
+      if (res.ok) json = await res.json();
+    } catch (e) {
+      json = null;
+    }
+
+    if (json && json.status === 'success') {
+      pm25Data = json.stations || [];
+      return;
+    }
+
+    // GitHub Pages 靜態託管降級機制：直接存取 LASS AirBox API
+    const airRes = await fetch('https://pm25.lass-net.org/API-1.0.0/project/airbox/latest/');
+    const airJson = await airRes.json();
+    const feeds = airJson.feeds || [];
+
+    pm25Data = feeds.map(f => {
+      const lat = parseFloat(f.gps_lat);
+      const lon = parseFloat(f.gps_lon);
+      const pm25 = parseFloat(f.s_d0);
+      if (isNaN(lat) || isNaN(lon) || isNaN(pm25)) return null;
+      if (lat < 21.5 || lat > 25.5 || lon < 119.5 || lon > 122.5) return null;
+      if (pm25 < 0 || pm25 > 200) return null;
+
+      return {
+        name: f.SiteName || f.name || f.device_id,
+        area: f.area || '臺灣',
+        lat: lat,
+        lon: lon,
+        pm25: Math.round(pm25),
+        temp: parseFloat(f.s_t0) || 26,
+        humidity: parseFloat(f.s_h0) || 75
+      };
+    }).filter(Boolean);
+
   } catch (err) {
     console.error('PM2.5 fetch error:', err);
   }
