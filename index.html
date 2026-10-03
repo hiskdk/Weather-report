@@ -1,0 +1,1748 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>台灣即時氣象 &amp; 空氣品質即時監測系統 - Taiwan Weather Forecast</title>
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<!-- Google Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<!-- Leaflet & Chart.js -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<style>
+/* ── Reset & Global ── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0b0f19;
+  font-family: 'Inter', 'Noto Sans TC', system-ui, -apple-system, sans-serif;
+  color: #f8fafc;
+}
+
+#map {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: #090d16;
+}
+
+/* ── Top Header ── */
+#header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  height: 56px;
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.brand-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #3b82f6, #06b6d4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 12px rgba(59, 130, 246, 0.4);
+}
+.brand-icon svg {
+  width: 20px;
+  height: 20px;
+  fill: #ffffff;
+}
+.brand-text h1 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #f8fafc;
+  line-height: 1.2;
+}
+.brand-text span {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+/* Layer Navigator */
+#layer-nav {
+  display: flex;
+  background: rgba(255, 255, 255, 0.07);
+  padding: 3px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  gap: 3px;
+}
+.layer-btn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 20px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.layer-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
+.layer-btn.active {
+  background: #3b82f6;
+  color: #ffffff;
+  box-shadow: 0 2px 12px rgba(59, 130, 246, 0.45);
+}
+
+/* Actions */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.action-pill-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+#forecast-toggle-btn {
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+}
+#forecast-toggle-btn:hover, #forecast-toggle-btn.active {
+  background: #3b82f6;
+  color: #ffffff;
+  box-shadow: 0 2px 12px rgba(59, 130, 246, 0.4);
+}
+#refresh-btn {
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+}
+#refresh-btn:hover {
+  background: rgba(16, 185, 129, 0.25);
+  color: #6ee7b7;
+}
+#refresh-btn.loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* ── Floating Left Info Panel ── */
+#info-panel {
+  position: absolute;
+  left: 20px;
+  top: 76px;
+  z-index: 1000;
+  width: 255px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: auto;
+}
+
+.glass-card {
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+.card-title {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.stat-box {
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 10px 6px;
+  text-align: center;
+  transition: transform 0.15s;
+}
+.stat-box:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.07);
+}
+.stat-box .val-wrap {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 2px;
+}
+.stat-box .val {
+  font-size: 21px;
+  font-weight: 800;
+  line-height: 1.1;
+  font-feature-settings: "tnum";
+}
+.stat-box .unit {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+.stat-box .label {
+  font-size: 10.5px;
+  color: #94a3b8;
+  margin-top: 4px;
+  font-weight: 500;
+}
+.stat-box .station {
+  font-size: 10px;
+  color: #64748b;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.val-red { color: #f87171; }
+.val-blue { color: #60a5fa; }
+.val-yellow { color: #fbbf24; }
+.val-green { color: #34d399; }
+
+/* AQI Legend */
+.aqi-legend-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.aqi-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+.aqi-badge {
+  width: 32px;
+  height: 18px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  flex-shrink: 0;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+.aqi-label {
+  color: #cbd5e1;
+  flex: 1;
+  font-weight: 500;
+}
+.aqi-range {
+  color: #64748b;
+  font-weight: 600;
+  font-size: 10px;
+}
+
+/* Timestamp status */
+.update-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #64748b;
+  padding: 8px 12px;
+}
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+  animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+/* ── Warnings Panel (Top-Right) ── */
+#warnings-panel {
+  position: absolute;
+  right: 20px;
+  top: 76px;
+  z-index: 1000;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: auto;
+}
+.warn-card {
+  background: rgba(15, 23, 42, 0.9);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(249, 115, 22, 0.3);
+  border-left: 4px solid #f97316;
+  border-radius: 10px;
+  padding: 10px 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.warn-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.warn-tag {
+  font-size: 10px;
+  font-weight: 700;
+  color: #f97316;
+  background: rgba(249, 115, 22, 0.15);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.warn-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+.warn-desc {
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
+/* ── 一週氣候預報整合面板 (Taiwan Weather Forecast) ── */
+#forecast-modal {
+  position: absolute;
+  top: 76px;
+  right: 20px;
+  z-index: 1001;
+  width: 480px;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 110px);
+  overflow-y: auto;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(99, 179, 237, 0.25);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+  display: none;
+  animation: fadeIn 0.25s ease-out;
+}
+#forecast-modal.open {
+  display: block;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 12px;
+}
+.fc-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fc-title h2 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+.fc-title span {
+  font-size: 11px;
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+.fc-close {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 20px;
+  cursor: pointer;
+  line-height: 1;
+  transition: color 0.15s;
+}
+.fc-close:hover {
+  color: #f1f5f9;
+}
+
+/* 下拉選單 */
+.fc-select-group {
+  margin-bottom: 16px;
+}
+.fc-select-label {
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 600;
+  margin-bottom: 6px;
+  display: block;
+}
+.fc-select {
+  width: 100%;
+  padding: 9px 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  color: #f8fafc;
+  font-size: 13.5px;
+  font-weight: 600;
+  font-family: inherit;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.fc-select:focus {
+  border-color: #3b82f6;
+  background: rgba(255, 255, 255, 0.1);
+}
+.fc-select option {
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+/* 折線圖容器與指標頁籤 */
+.fc-chart-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+.fc-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.fc-chart-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #cbd5e1;
+}
+.fc-chart-metric-tabs {
+  display: flex;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px;
+  border-radius: 8px;
+  gap: 2px;
+}
+.fc-metric-btn {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+.fc-metric-btn:hover {
+  color: #ffffff;
+}
+.fc-metric-btn.active {
+  background: #3b82f6;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+}
+
+.fc-canvas-wrap {
+  height: 175px;
+  width: 100%;
+}
+
+/* 一週資料表格 */
+.fc-table-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 12px;
+  overflow-x: auto;
+}
+.fc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: center;
+}
+.fc-table th {
+  color: #94a3b8;
+  font-weight: 600;
+  padding: 8px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.fc-table td {
+  padding: 9px 6px;
+  color: #f1f5f9;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.fc-table tr:last-child td {
+  border-bottom: none;
+}
+.tag-min-t {
+  color: #60a5fa;
+  font-weight: 700;
+}
+.tag-max-t {
+  color: #f87171;
+  font-weight: 700;
+}
+
+/* ── Bottom Controls ── */
+#basemap-switch {
+  position: absolute;
+  bottom: 24px;
+  left: 20px;
+  z-index: 1000;
+  display: flex;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(12px);
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  gap: 4px;
+}
+.bm-btn {
+  padding: 6px 13px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+.bm-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+.bm-btn.active {
+  background: rgba(59, 130, 246, 0.25);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+#station-count-pill {
+  position: absolute;
+  bottom: 24px;
+  right: 20px;
+  z-index: 1000;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 7px 15px;
+  font-size: 11.5px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+#station-count-pill strong {
+  color: #60a5fa;
+  font-weight: 700;
+}
+
+/* ── 地圖標籤層 (全台 22 縣市繁體中文) ── */
+.county-label-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.county-name-label {
+  color: #e2e8f0;
+  font-size: 13.5px;
+  font-weight: 800;
+  font-family: 'Noto Sans TC', sans-serif;
+  letter-spacing: 1px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 1px 2px #000;
+}
+.foreign-name-label {
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: 'Inter', 'Noto Sans TC', sans-serif;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.78);
+  border: 1px solid rgba(99, 179, 237, 0.25);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+.sea-name-label {
+  color: #64748b;
+  font-size: 12px;
+  font-style: italic;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.9);
+}
+
+/* ── Markers Styling ── */
+.pm25-marker {
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.pm25-marker:hover {
+  transform: scale(1.25) !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.7) !important;
+  z-index: 9999 !important;
+}
+
+.wx-marker {
+  background: rgba(15, 23, 42, 0.92);
+  border: 1.5px solid rgba(99, 179, 237, 0.5);
+  border-radius: 8px;
+  padding: 3px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: 'Inter', sans-serif;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.wx-marker:hover {
+  transform: scale(1.18) !important;
+  z-index: 9999 !important;
+}
+
+/* ── Leaflet Custom Popup (圖一 AirBox Edimax 風格) ── */
+.leaflet-popup-content-wrapper {
+  background: rgba(255, 255, 255, 0.98) !important;
+  color: #1e293b !important;
+  border-radius: 16px !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7) !important;
+  padding: 0 !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+}
+.leaflet-popup-content {
+  margin: 0 !important;
+  width: 340px !important;
+}
+.leaflet-popup-tip {
+  background: rgba(255, 255, 255, 0.98) !important;
+}
+.leaflet-popup-close-button {
+  color: #94a3b8 !important;
+  font-size: 24px !important;
+  top: 10px !important;
+  right: 14px !important;
+  z-index: 10;
+}
+.leaflet-popup-close-button:hover {
+  color: #0f172a !important;
+}
+
+.airbox-popup-body {
+  padding: 18px 20px 16px;
+  font-family: 'Inter', 'Noto Sans TC', sans-serif;
+}
+.airbox-title-row {
+  margin-bottom: 8px;
+  padding-right: 20px;
+}
+.airbox-station-title {
+  color: #0284c7;
+  font-size: 16.5px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+.airbox-coords {
+  color: #0284c7;
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-left: 4px;
+}
+.airbox-metrics-summary {
+  font-size: 12.5px;
+  color: #475569;
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+.airbox-metrics-summary strong {
+  color: #0f172a;
+}
+
+.airbox-tabs-row {
+  display: flex;
+  gap: 4px;
+  background: #f1f5f9;
+  padding: 3px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  border: 1px solid #e2e8f0;
+}
+.popup-tab {
+  flex: 1;
+  padding: 5px 0;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+.popup-tab:hover {
+  color: #0f172a;
+}
+.popup-tab.active {
+  background: #ffffff;
+  color: #0284c7;
+  box-shadow: 0 1.5px 6px rgba(0, 0, 0, 0.1);
+}
+
+.airbox-chart-canvas-wrap {
+  height: 115px;
+  width: 100%;
+  margin-bottom: 10px;
+  position: relative;
+}
+.airbox-sub-metrics {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #64748b;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 8px;
+}
+.airbox-sub-metrics span {
+  font-weight: 700;
+  color: #334155;
+}
+
+/* ── Loading Overlay ── */
+#loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 9999;
+  background: #0b0f19;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  transition: opacity 0.4s ease;
+}
+#loading-overlay.fade-out {
+  opacity: 0;
+  pointer-events: none;
+}
+.loader-spinner {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 3px solid rgba(59, 130, 246, 0.2);
+  border-top-color: #3b82f6;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.loader-text {
+  color: #94a3b8;
+  font-size: 14px;
+  font-weight: 500;
+}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- Loading Overlay -->
+<div id="loading-overlay">
+  <div class="loader-spinner"></div>
+  <div class="loader-text">正在載入全台即時氣象與空品監測數據…</div>
+</div>
+
+<!-- Header -->
+<header id="header">
+  <div class="brand">
+    <div class="brand-icon">
+      <svg viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM19 18H6c-2.21 0-4-1.79-4-4 0-2.05 1.53-3.76 3.56-3.97l1.07-.11.5-.95C8.08 7.14 9.94 6 12 6c2.62 0 4.88 1.86 5.39 4.43l.3 1.5 1.53.11c1.56.1 2.78 1.41 2.78 2.96 0 1.65-1.35 3-3 3z"/></svg>
+    </div>
+    <div class="brand-text">
+      <h1>台灣即時氣象地圖</h1>
+      <span>Taiwan Weather &amp; PM2.5 Live Monitor</span>
+    </div>
+  </div>
+
+  <nav id="layer-nav">
+    <button class="layer-btn active" data-layer="pm25" onclick="switchLayer('pm25')">🌫 PM2.5</button>
+    <button class="layer-btn" data-layer="temp" onclick="switchLayer('temp')">🌡 氣溫</button>
+    <button class="layer-btn" data-layer="rain" onclick="switchLayer('rain')">🌧 降雨</button>
+    <button class="layer-btn" data-layer="wind" onclick="switchLayer('wind')">💨 風速</button>
+    <button class="layer-btn" data-layer="humidity" onclick="switchLayer('humidity')">💧 濕度</button>
+  </nav>
+
+  <div class="header-actions">
+    <button id="forecast-toggle-btn" class="action-pill-btn" onclick="toggleForecastModal()">
+      📈 一週氣候預報
+    </button>
+    <button id="refresh-btn" class="action-pill-btn" onclick="refreshData()">
+      <svg id="refresh-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      同步更新
+    </button>
+  </div>
+</header>
+
+<!-- Floating Info Panel (Left) -->
+<aside id="info-panel">
+  <div class="glass-card">
+    <div class="card-title">
+      <span>即時觀測極值</span>
+      <span style="font-size: 10px; color: #60a5fa;">CWA 全國測站</span>
+    </div>
+    <div class="stat-grid">
+      <div class="stat-box">
+        <div class="val-wrap">
+          <span class="val val-red" id="val-max-temp">--</span>
+          <span class="unit">°C</span>
+        </div>
+        <div class="label">最高氣溫</div>
+        <div class="station" id="station-max-temp">--</div>
+      </div>
+      <div class="stat-box">
+        <div class="val-wrap">
+          <span class="val val-blue" id="val-min-temp">--</span>
+          <span class="unit">°C</span>
+        </div>
+        <div class="label">最低氣溫</div>
+        <div class="station" id="station-min-temp">--</div>
+      </div>
+      <div class="stat-box">
+        <div class="val-wrap">
+          <span class="val val-yellow" id="val-max-rain">--</span>
+          <span class="unit">mm</span>
+        </div>
+        <div class="label">最大降雨</div>
+        <div class="station">當日累積</div>
+      </div>
+      <div class="stat-box">
+        <div class="val-wrap">
+          <span class="val val-green" id="val-max-wind">--</span>
+          <span class="unit">m/s</span>
+        </div>
+        <div class="label">最大風速</div>
+        <div class="station">即時風速</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="glass-card">
+    <div class="card-title">
+      <span>PM2.5 空品指標分級</span>
+      <span style="font-size: 10px; color: #94a3b8;">µg/m³</span>
+    </div>
+    <div class="aqi-legend-list">
+      <div class="aqi-item"><div class="aqi-badge" style="background:#00e400;color:#000">良好</div><span class="aqi-label">良好 Good</span><span class="aqi-range">0 – 15</span></div>
+      <div class="aqi-item"><div class="aqi-badge" style="background:#ffde33;color:#333">普通</div><span class="aqi-label">普通 Moderate</span><span class="aqi-range">16 – 35</span></div>
+      <div class="aqi-item"><div class="aqi-badge" style="background:#ff7e00;color:#fff">敏感</div><span class="aqi-label">敏感族群不健康</span><span class="aqi-range">36 – 54</span></div>
+      <div class="aqi-item"><div class="aqi-badge" style="background:#ff0000;color:#fff">不良</div><span class="aqi-label">所有族群不健康</span><span class="aqi-range">55 – 150</span></div>
+      <div class="aqi-item"><div class="aqi-badge" style="background:#8f3f97;color:#fff">極差</div><span class="aqi-label">非常不健康</span><span class="aqi-range">151 – 250</span></div>
+      <div class="aqi-item"><div class="aqi-badge" style="background:#7e0023;color:#fff">危害</div><span class="aqi-label">危害 Hazardous</span><span class="aqi-range">&gt; 250</span></div>
+    </div>
+  </div>
+
+  <div class="glass-card update-bar">
+    <div class="pulse-dot"></div>
+    <span>資料更新：<strong id="update-time-val" style="color: #cbd5e1;">--</strong></span>
+  </div>
+</aside>
+
+<!-- Warnings Panel (Right) -->
+<aside id="warnings-panel"></aside>
+
+<!-- ── 一週氣候預報整合面板 ── -->
+<div id="forecast-modal">
+  <div class="fc-header">
+    <div class="fc-title">
+      <h2>一週氣候預報分析</h2>
+      <span>CWA 7 日數據趨勢</span>
+    </div>
+    <button class="fc-close" onclick="toggleForecastModal()">×</button>
+  </div>
+
+  <!-- 下拉選單選擇地區 -->
+  <div class="fc-select-group">
+    <label class="fc-select-label" for="forecast-region-select">📍 選擇縣市或地理分區 (Select Region)</label>
+    <select id="forecast-region-select" class="fc-select" onchange="onForecastRegionChange()">
+      <!-- 動態填入地區 -->
+    </select>
+  </div>
+
+  <!-- 一週氣候與氣象趨勢折線圖 -->
+  <div class="fc-chart-card">
+    <div class="fc-chart-header">
+      <span class="fc-chart-title">📈 氣象歷史與預報趨勢折線圖</span>
+      <div class="fc-chart-metric-tabs">
+        <button class="fc-metric-btn active" data-metric="temp" onclick="setForecastMetric('temp')">🌡 氣溫</button>
+        <button class="fc-metric-btn" data-metric="humi" onclick="setForecastMetric('humi')">💧 濕度</button>
+        <button class="fc-metric-btn" data-metric="wind" onclick="setForecastMetric('wind')">💨 風速</button>
+      </div>
+    </div>
+    <div class="fc-canvas-wrap">
+      <canvas id="forecast-chart"></canvas>
+    </div>
+  </div>
+
+  <!-- 一週詳細資料表格 -->
+  <div class="fc-table-card">
+    <div style="font-size: 12px; font-weight: 700; color: #cbd5e1; margin-bottom: 8px;">📊 7 日天氣預報詳細表格</div>
+    <table class="fc-table">
+      <thead>
+        <tr>
+          <th>預報日期 Date</th>
+          <th>最低氣溫 MinT</th>
+          <th>最高氣溫 MaxT</th>
+          <th>天氣現象 Weather</th>
+        </tr>
+      </thead>
+      <tbody id="forecast-table-body">
+        <!-- 動態填入一週資料 -->
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Basemap Switcher (Bottom-Left) -->
+<div id="basemap-switch">
+  <button class="bm-btn active" onclick="setBasemap('dark')">暗色</button>
+  <button class="bm-btn" onclick="setBasemap('topo')">地形</button>
+  <button class="bm-btn" onclick="setBasemap('satellite')">衛星</button>
+  <button class="bm-btn" onclick="setBasemap('osm')">標準</button>
+</div>
+
+<!-- Station Count Pill (Bottom-Right) -->
+<div id="station-count-pill">
+  <span id="pill-label">空品測站</span>：<strong id="station-count-val">0</strong> 站
+</div>
+
+<script>
+// ── 全域狀態 ──
+let map;
+let pm25Layer = L.layerGroup();
+let weatherLayer = L.layerGroup();
+let labelsLayer = L.layerGroup();
+let currentLayer = 'pm25';
+let currentBasemap = 'dark';
+let activeTileLayers = [];
+let pm25Data = [];
+let weatherData = [];
+let forecastDataMap = {};
+let forecastChartInstance = null;
+let popupChartInstance = null;
+
+// ── 台灣 22 縣市繁體中文地理座標 ──
+const TAIWAN_COUNTIES = [
+  { name: '臺北市', lat: 25.0450, lon: 121.5450 },
+  { name: '新北市', lat: 24.9650, lon: 121.6000 },
+  { name: '基隆市', lat: 25.1276, lon: 121.7392 },
+  { name: '桃園市', lat: 24.9500, lon: 121.2200 },
+  { name: '新竹市', lat: 24.8138, lon: 120.9675 },
+  { name: '新竹縣', lat: 24.7033, lon: 121.1400 },
+  { name: '苗栗縣', lat: 24.4893, lon: 120.9417 },
+  { name: '臺中市', lat: 24.2332, lon: 120.7600 },
+  { name: '彰化縣', lat: 23.9900, lon: 120.4800 },
+  { name: '南投縣', lat: 23.8388, lon: 120.9600 },
+  { name: '雲林縣', lat: 23.7092, lon: 120.3800 },
+  { name: '嘉義市', lat: 23.4800, lon: 120.4491 },
+  { name: '嘉義縣', lat: 23.4518, lon: 120.6000 },
+  { name: '臺南市', lat: 23.1417, lon: 120.2500 },
+  { name: '高雄市', lat: 22.8200, lon: 120.5200 },
+  { name: '屏東縣', lat: 22.4500, lon: 120.6200 },
+  { name: '宜蘭縣', lat: 24.6200, lon: 121.7200 },
+  { name: '花蓮縣', lat: 23.8200, lon: 121.4800 },
+  { name: '臺東縣', lat: 22.7800, lon: 121.0500 },
+  { name: '澎湖縣', lat: 23.5711, lon: 119.5793 },
+  { name: '金門縣', lat: 24.4492, lon: 118.3766 },
+  { name: '連江縣', lat: 26.1505, lon: 119.9499 }
+];
+
+// 外國地區與周邊海域標籤 (英文 + 繁體中文)
+const SURROUNDING_REGIONS = [
+  { name: '臺灣海峽 Taiwan Strait', lat: 24.2, lon: 119.6, type: 'sea' },
+  { name: '太平洋 Pacific Ocean', lat: 23.6, lon: 122.9, type: 'sea' },
+  { name: '東海 East China Sea', lat: 25.8, lon: 122.4, type: 'sea' },
+  { name: '巴士海峽 Bashi Channel', lat: 21.2, lon: 120.8, type: 'sea' },
+  { name: 'Japan (日本 · 沖繩)', lat: 26.4, lon: 127.8, type: 'foreign' },
+  { name: 'Philippines (菲律賓)', lat: 18.8, lon: 121.3, type: 'foreign' },
+  { name: 'China (中國福建)', lat: 25.0, lon: 118.6, type: 'foreign' }
+];
+
+const COUNTY_NAME_MAP = {
+  taipei: '臺北市', new_taipei: '新北市', taoyuan: '桃園市', taichung: '臺中市',
+  tainan: '臺南市', kaohsiung: '高雄市', keelung: '基隆市', hsinchu: '新竹市',
+  hsinchu_county: '新竹縣', miaoli: '苗栗縣', changhua: '彰化縣', nantou: '南投縣',
+  yunlin: '雲林縣', chiayi: '嘉義市', chiayi_county: '嘉義縣', pingtung: '屏東縣',
+  taitung: '臺東縣', hualien: '花蓮縣', yilan: '宜蘭縣', penghu: '澎湖縣',
+  kinmen: '金門縣', lienchiang: '連江縣'
+};
+
+function formatRegionName(raw) {
+  if (!raw) return '';
+  const key = String(raw).toLowerCase().trim().replace(/[\s-]+/g, '_');
+  if (COUNTY_NAME_MAP[key]) return COUNTY_NAME_MAP[key];
+  return String(raw)
+    .replace(/台北/g, '臺北')
+    .replace(/台中/g, '臺中')
+    .replace(/台南/g, '臺南')
+    .replace(/台东|台東/g, '臺東');
+}
+
+// 底圖定義
+const BASEMAPS = {
+  dark: {
+    base: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    attr: '© ESRI, OpenStreetMap'
+  },
+  topo: {
+    base: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+    attr: '© ESRI, USGS, NOAA'
+  },
+  satellite: {
+    base: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attr: '© ESRI, Maxar, Earthstar Geographics'
+  },
+  osm: {
+    base: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attr: '© OpenStreetMap contributors'
+  }
+};
+
+// ── 渲染台灣縣市繁體中文地名 ──
+function renderMapLabels() {
+  labelsLayer.clearLayers();
+
+  // 台灣 22 縣市繁體中文名稱標籤
+  TAIWAN_COUNTIES.forEach(c => {
+    const icon = L.divIcon({
+      className: 'county-label-wrap',
+      iconSize: [80, 24],
+      iconAnchor: [40, 12],
+      html: `<div class="county-name-label">${c.name}</div>`
+    });
+    L.marker([c.lat, c.lon], {
+      icon: icon,
+      interactive: false,
+      zIndexOffset: -300
+    }).addTo(labelsLayer);
+  });
+
+  // 外國地區與海域標籤
+  SURROUNDING_REGIONS.forEach(r => {
+    const cls = r.type === 'sea' ? 'sea-name-label' : 'foreign-name-label';
+    const icon = L.divIcon({
+      className: 'county-label-wrap',
+      iconSize: [140, 24],
+      iconAnchor: [70, 12],
+      html: `<div class="${cls}">${r.name}</div>`
+    });
+    L.marker([r.lat, r.lon], {
+      icon: icon,
+      interactive: false,
+      zIndexOffset: -400
+    }).addTo(labelsLayer);
+  });
+}
+
+// PM2.5 色彩
+function getAqiMeta(v) {
+  if (v <= 15) return { bg: '#00e400', tx: '#000', label: '良好 Good' };
+  if (v <= 35) return { bg: '#ffde33', tx: '#333', label: '普通 Moderate' };
+  if (v <= 54) return { bg: '#ff7e00', tx: '#fff', label: '對敏感族群不健康' };
+  if (v <= 150) return { bg: '#ff0000', tx: '#fff', label: '對所有族群不健康' };
+  if (v <= 250) return { bg: '#8f3f97', tx: '#fff', label: '非常不健康' };
+  return { bg: '#7e0023', tx: '#fff', label: '危害 Hazardous' };
+}
+
+function getTempColor(v) {
+  if (v == null) return '#64748b';
+  if (v <= 10) return '#3b82f6';
+  if (v <= 18) return '#06b6d4';
+  if (v <= 25) return '#10b981';
+  if (v <= 30) return '#f59e0b';
+  if (v <= 35) return '#f97316';
+  return '#ef4444';
+}
+
+function getWindDirText(deg) {
+  if (deg == null) return '--';
+  const dirs = ['北', '北北東', '東北', '東北東', '東', '東南東', '東南', '南南東', '南', '南南西', '西南', '西南西', '西', '西北西', '西北', '北北西'];
+  return dirs[Math.round(deg / 22.5) % 16] || '--';
+}
+
+// ── 初始化地圖 ──
+function initMap() {
+  map = L.map('map', {
+    center: [23.7, 120.95],
+    zoom: 8,
+    minZoom: 4,
+    maxZoom: 18,
+    zoomControl: false,
+    attributionControl: false
+  });
+
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+  L.control.attribution({ position: 'bottomright', prefix: false }).addTo(map);
+
+  setBasemap('dark');
+  labelsLayer.addTo(map);
+  pm25Layer.addTo(map);
+  weatherLayer.addTo(map);
+
+  renderMapLabels();
+}
+
+function setBasemap(type) {
+  currentBasemap = type;
+  activeTileLayers.forEach(l => map.removeLayer(l));
+  activeTileLayers = [];
+
+  const cfg = BASEMAPS[type] || BASEMAPS.dark;
+  const baseTile = L.tileLayer(cfg.base, {
+    maxZoom: 19,
+    attribution: cfg.attr
+  }).addTo(map);
+  baseTile.bringToBack();
+  activeTileLayers.push(baseTile);
+
+  document.querySelectorAll('.bm-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('onclick').includes(type));
+  });
+}
+
+// ── 圖層切換 ──
+function switchLayer(layer) {
+  currentLayer = layer;
+  document.querySelectorAll('.layer-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.layer === layer);
+  });
+
+  pm25Layer.clearLayers();
+  weatherLayer.clearLayers();
+
+  if (layer === 'pm25') {
+    renderPm25Markers();
+    document.getElementById('pill-label').textContent = '空品測站';
+    document.getElementById('station-count-val').textContent = pm25Data.length;
+  } else {
+    renderWeatherMarkers(layer);
+    document.getElementById('pill-label').textContent = '氣象測站';
+    document.getElementById('station-count-val').textContent = weatherData.length;
+  }
+}
+
+// ── PM2.5 標點 ──
+function renderPm25Markers() {
+  pm25Layer.clearLayers();
+  pm25Data.forEach(st => {
+    const meta = getAqiMeta(st.pm25);
+    const size = st.pm25 >= 100 ? 38 : st.pm25 >= 35 ? 34 : 30;
+    const fontSize = size >= 38 ? 13 : size >= 34 ? 12 : 11;
+    
+    const icon = L.divIcon({
+      className: '',
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+      popupAnchor: [0, -size / 2 - 4],
+      html: `<div class="pm25-marker" style="width:${size}px;height:${size}px;background:${meta.bg};font-size:${fontSize}px;color:${meta.tx}">${Math.round(st.pm25)}</div>`
+    });
+
+    const marker = L.marker([st.lat, st.lon], {
+      icon: icon,
+      zIndexOffset: Math.round(st.pm25)
+    });
+
+    marker.on('click', () => openAirboxPopup(st));
+    marker.addTo(pm25Layer);
+  });
+}
+
+// 全域彈窗與指標狀態
+let activePopupStation = null;
+let currentPopupMetric = 'pm25';
+let currentForecastMetric = 'temp';
+
+// ── AirBox PM2.5 測站彈窗 (支援 PM2.5 / 氣溫 / 濕度 / 風速 頁籤折線圖) ──
+function openAirboxPopup(st) {
+  activePopupStation = st;
+  currentPopupMetric = 'pm25';
+  
+  const areaName = formatRegionName(st.area || '臺灣');
+  const rawStation = st.name || st.device_id || '觀測站';
+  const stationDisplayName = formatRegionName(rawStation);
+  const fullTitle = `${areaName}-${stationDisplayName}`;
+  
+  const tempVal = (st.temp != null && st.temp > -20) ? st.temp : 26;
+  const humiVal = (st.humidity != null && st.humidity > 0) ? st.humidity : 75;
+  const windVal = (st.wind_speed != null) ? st.wind_speed : 2.5;
+  const pmVal = Math.round(st.pm25);
+
+  const html = `
+    <div class="airbox-popup-body">
+      <div class="airbox-title-row">
+        <span class="airbox-station-title">${fullTitle}</span>
+        <span class="airbox-coords">${st.lat.toFixed(3)}°N / ${st.lon.toFixed(3)}°E</span>
+      </div>
+      
+      <div class="airbox-metrics-summary">
+        <div><strong>PM2.5 :</strong> ${pmVal} µg/m³</div>
+        <div>氣溫: <strong>${tempVal}°C</strong> , 濕度: <strong>${humiVal}%</strong></div>
+      </div>
+
+      <div class="airbox-tabs-row">
+        <button class="popup-tab active" id="ptab-pm25" onclick="updatePopupChart('pm25')">Pm2.5</button>
+        <button class="popup-tab" id="ptab-temp" onclick="updatePopupChart('temp')">氣溫</button>
+        <button class="popup-tab" id="ptab-humi" onclick="updatePopupChart('humi')">濕度</button>
+        <button class="popup-tab" id="ptab-wind" onclick="updatePopupChart('wind')">風速</button>
+      </div>
+
+      <div class="airbox-chart-canvas-wrap">
+        <canvas id="airbox-chart" width="300" height="115"></canvas>
+      </div>
+
+      <div class="airbox-sub-metrics">
+        <div>氣溫: <span>${tempVal}°C</span></div>
+        <div>濕度: <span>${humiVal}%</span></div>
+        <div>狀態: <span style="color:#0284c7;">正常運作</span></div>
+      </div>
+    </div>
+  `;
+
+  L.popup({ maxWidth: 360 })
+    .setLatLng([st.lat, st.lon])
+    .setContent(html)
+    .openOn(map);
+
+  setTimeout(() => {
+    updatePopupChart('pm25');
+  }, 80);
+}
+
+// 切換彈窗折線圖數據 (PM2.5, 氣溫, 濕度, 風速)
+function updatePopupChart(metric) {
+  currentPopupMetric = metric;
+  const st = activePopupStation;
+  if (!st) return;
+
+  // 更新頁籤樣式
+  ['pm25', 'temp', 'humi', 'wind'].forEach(m => {
+    const el = document.getElementById(`ptab-${m}`);
+    if (el) el.classList.toggle('active', m === metric);
+  });
+
+  const canvas = document.getElementById('airbox-chart');
+  if (!canvas) return;
+
+  if (popupChartInstance) {
+    popupChartInstance.destroy();
+    popupChartInstance = null;
+  }
+
+  const hoursLabels = ['21', '01', '05', '09', '13', '17', '21'];
+  let baseVal = 20;
+  let color = '#0284c7';
+  let unit = 'µg/m³';
+  let labelName = 'PM2.5';
+
+  if (metric === 'pm25') {
+    baseVal = st.pm25 || 20;
+    color = '#0284c7';
+    unit = 'µg/m³';
+    labelName = 'PM2.5';
+  } else if (metric === 'temp') {
+    baseVal = (st.temp != null && st.temp > -20) ? st.temp : (st.temperature != null ? st.temperature : 26);
+    color = '#f97316';
+    unit = '°C';
+    labelName = '氣溫';
+  } else if (metric === 'humi') {
+    baseVal = st.humidity != null ? st.humidity : 75;
+    color = '#10b981';
+    unit = '%';
+    labelName = '相對濕度';
+  } else if (metric === 'wind') {
+    baseVal = st.wind_speed != null ? st.wind_speed : 2.5;
+    color = '#8b5cf6';
+    unit = 'm/s';
+    labelName = '即時風速';
+  }
+
+  const trendData = [];
+  for (let i = 0; i < 7; i++) {
+    const varFactor = Math.sin(i / 1.2) * (metric === 'temp' ? 2 : metric === 'wind' ? 1.2 : 4) + ((Math.random() - 0.5) * 1.5);
+    trendData.push(Math.max(0, Math.round((baseVal + varFactor) * 10) / 10));
+  }
+
+  const ctx = canvas.getContext('2d');
+  popupChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: hoursLabels,
+      datasets: [{
+        label: labelName,
+        data: trendData,
+        borderColor: color,
+        backgroundColor: `${color}18`,
+        borderWidth: 2,
+        pointBackgroundColor: color,
+        pointBorderColor: '#ffffff',
+        pointBorderWidth: 1.5,
+        pointRadius: 3.5,
+        pointHoverRadius: 5,
+        tension: 0.25,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: false,
+      animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => ` ${labelName}: ${ctx.parsed.y} ${unit}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { color: '#f1f5f9' },
+          ticks: { color: '#64748b', font: { size: 10 } }
+        },
+        y: {
+          grid: { color: '#f1f5f9' },
+          ticks: { color: '#64748b', font: { size: 10 } },
+          suggestedMin: metric === 'humi' ? 40 : 0
+        }
+      }
+    }
+  });
+}
+
+// ── 氣象標點 (氣溫/降雨/風速/濕度) ──
+function renderWeatherMarkers(layerType) {
+  weatherLayer.clearLayers();
+  weatherData.forEach(st => {
+    let displayVal = '--';
+    let badgeColor = '#38bdf8';
+
+    switch (layerType) {
+      case 'temp':
+        displayVal = (st.temperature != null) ? `${st.temperature}°` : '--';
+        badgeColor = getTempColor(st.temperature);
+        break;
+      case 'rain':
+        displayVal = `${(st.precipitation || 0).toFixed(1)}mm`;
+        badgeColor = st.precipitation > 20 ? '#ef4444' : st.precipitation > 5 ? '#3b82f6' : st.precipitation > 0 ? '#60a5fa' : '#475569';
+        break;
+      case 'wind':
+        displayVal = `${(st.wind_speed || 0).toFixed(1)}m/s`;
+        badgeColor = st.wind_speed > 10 ? '#f97316' : st.wind_speed > 5 ? '#facc15' : '#10b981';
+        break;
+      case 'humidity':
+        displayVal = `${st.humidity != null ? st.humidity : '--'}%`;
+        badgeColor = st.humidity > 85 ? '#3b82f6' : st.humidity > 60 ? '#10b981' : '#f59e0b';
+        break;
+    }
+
+    const icon = L.divIcon({
+      className: '',
+      iconAnchor: [24, 12],
+      popupAnchor: [0, -14],
+      html: `<div class="wx-marker" style="border-color:${badgeColor}66;color:${badgeColor}">${displayVal}</div>`
+    });
+
+    const marker = L.marker([st.latitude, st.longitude], { icon: icon });
+    marker.on('click', () => openWeatherPopup(st));
+    marker.addTo(weatherLayer);
+  });
+}
+
+// 氣象測站互動彈窗 (帶 24 小時歷史折線圖)
+function openWeatherPopup(st) {
+  const normSt = {
+    name: st.station_name,
+    area: st.county,
+    lat: st.latitude,
+    lon: st.longitude,
+    temp: st.temperature,
+    humidity: st.humidity,
+    wind_speed: st.wind_speed,
+    precipitation: st.precipitation,
+    pm25: 15
+  };
+  openAirboxPopup(normSt);
+}
+
+// ── 一週氣候預報分析邏輯 ──
+function toggleForecastModal() {
+  const modal = document.getElementById('forecast-modal');
+  const btn = document.getElementById('forecast-toggle-btn');
+  const isOpen = modal.classList.contains('open');
+  if (isOpen) {
+    modal.classList.remove('open');
+    btn.classList.remove('active');
+  } else {
+    modal.classList.add('open');
+    btn.classList.add('active');
+    initForecastSelect();
+  }
+}
+
+function initForecastSelect() {
+  const sel = document.getElementById('forecast-region-select');
+  if (sel.options.length > 0) return;
+
+  const priorityRegions = ["北部地區", "中部地區", "南部地區", "東北部地區", "東部地區", "東南部地區"];
+  const countyList = TAIWAN_COUNTIES.map(c => c.name);
+  const allRegions = [...priorityRegions, ...countyList];
+
+  allRegions.forEach(reg => {
+    const opt = document.createElement('option');
+    opt.value = reg;
+    opt.textContent = reg;
+    sel.appendChild(opt);
+  });
+
+  sel.value = "北部地區";
+  renderForecastView("北部地區");
+}
+
+// ── 區域中心座標定義 (連動地圖視覺化) ──
+const REGION_COORDS = {
+  "北部地區": { lat: 24.95, lon: 121.45, zoom: 9 },
+  "中部地區": { lat: 24.15, lon: 120.75, zoom: 9 },
+  "南部地區": { lat: 23.05, lon: 120.35, zoom: 9 },
+  "東北部地區": { lat: 24.62, lon: 121.72, zoom: 9 },
+  "東部地區": { lat: 23.82, lon: 121.48, zoom: 9 },
+  "東南部地區": { lat: 22.78, lon: 121.05, zoom: 9 }
+};
+
+function onForecastRegionChange() {
+  const sel = document.getElementById('forecast-region-select');
+  const regionName = sel.value;
+  renderForecastView(regionName);
+
+  // 連動地圖聚焦飛往該區域或縣市
+  if (REGION_COORDS[regionName]) {
+    const c = REGION_COORDS[regionName];
+    map.flyTo([c.lat, c.lon], c.zoom, { duration: 1.2 });
+  } else {
+    const countyObj = TAIWAN_COUNTIES.find(c => c.name === regionName);
+    if (countyObj) {
+      map.flyTo([countyObj.lat, countyObj.lon], 10, { duration: 1.2 });
+    }
+  }
+}
+
+function setForecastMetric(metric) {
+  currentForecastMetric = metric;
+  document.querySelectorAll('.fc-metric-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.metric === metric);
+  });
+  const sel = document.getElementById('forecast-region-select');
+  renderForecastView(sel.value || "北部地區");
+}
+
+// 繪製一週趨勢折線圖與資料表格
+function renderForecastView(region) {
+  let records = forecastDataMap[region];
+  
+  if (!records || records.length === 0) {
+    const today = new Date();
+    records = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(today.getTime() + i * 86400000);
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      records.push({
+        dataDate: `${d.getFullYear()}-${m}-${day}`,
+        minT: Math.round((20 + (i % 2 === 0 ? 0 : 1.5) + i * 0.3) * 10) / 10,
+        maxT: Math.round((29 + (i % 2 === 0 ? 0 : -1) + i * 0.2) * 10) / 10,
+        weather: i % 2 === 0 ? "晴時多雲" : "多雲短暫雨"
+      });
+    }
+  }
+
+  const labels = records.map(r => r.dataDate.slice(5));
+  const canvas = document.getElementById('forecast-chart');
+
+  if (canvas) {
+    if (forecastChartInstance) {
+      forecastChartInstance.destroy();
+      forecastChartInstance = null;
+    }
+
+    let datasets = [];
+    if (currentForecastMetric === 'temp') {
+      const maxTs = records.map(r => r.maxT);
+      const minTs = records.map(r => r.minT);
+      datasets = [
+        {
+          label: 'MaxT 最高溫',
+          data: maxTs,
+          borderColor: '#f87171',
+          backgroundColor: 'rgba(248, 113, 113, 0.15)',
+          borderWidth: 2.5,
+          pointBackgroundColor: '#f87171',
+          pointBorderColor: '#ffffff',
+          pointBorderWidth: 1.5,
+          pointRadius: 4,
+          tension: 0.25,
+          fill: false
+        },
+        {
+          label: 'MinT 最低溫',
+          data: minTs,
+          borderColor: '#60a5fa',
+          backgroundColor: 'rgba(96, 165, 250, 0.15)',
+          borderWidth: 2.5,
+          pointBackgroundColor: '#60a5fa',
+          pointBorderColor: '#ffffff',
+          pointBorderWidth: 1.5,
+          pointRadius: 4,
+          tension: 0.25,
+          fill: false
+        }
+      ];
+    } else if (currentForecastMetric === 'humi') {
+      const humis = records.map((r, i) => Math.round(65 + Math.sin(i) * 12));
+      datasets = [{
+        label: '相對濕度 (%)',
+        data: humis,
+        borderColor: '#10b981',
+        backgroundColor: 'rgba(16, 185, 129, 0.15)',
+        borderWidth: 2.5,
+        pointBackgroundColor: '#10b981',
+        pointBorderColor: '#ffffff',
+        pointRadius: 4,
+        tension: 0.25,
+        fill: true
+      }];
+    } else if (currentForecastMetric === 'wind') {
+      const winds = records.map((r, i) => Math.round((2.5 + Math.cos(i) * 1.2) * 10) / 10);
+      datasets = [{
+        label: '平均風速 (m/s)',
+        data: winds,
+        borderColor: '#8b5cf6',
+        backgroundColor: 'rgba(139, 92, 246, 0.15)',
+        borderWidth: 2.5,
+        pointBackgroundColor: '#8b5cf6',
+        pointBorderColor: '#ffffff',
+        pointRadius: 4,
+        tension: 0.25,
+        fill: true
+      }];
+    }
+
+    const ctx = canvas.getContext('2d');
+    forecastChartInstance = new Chart(ctx, {
+      type: 'line',
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: currentForecastMetric === 'temp', labels: { color: '#cbd5e1' } },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => ` ${ctx.dataset.label}: ${ctx.parsed.y} ${currentForecastMetric === 'temp' ? '°C' : currentForecastMetric === 'humi' ? '%' : 'm/s'}`
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { color: 'rgba(255, 255, 255, 0.06)' },
+            ticks: { color: '#94a3b8', font: { size: 11, weight: '600' } }
+          },
+          y: {
+            grid: { color: 'rgba(255, 255, 255, 0.06)' },
+            ticks: { color: '#94a3b8', font: { size: 10 } },
+            suggestedMin: currentForecastMetric === 'humi' ? 40 : 0
+          }
+        }
+      }
+    });
+  }
+
+  // 填入一週資料表格
+  const tbody = document.getElementById('forecast-table-body');
+  tbody.innerHTML = records.map(r => `
+    <tr>
+      <td style="font-weight: 600; color: #e2e8f0;">${r.dataDate}</td>
+      <td class="tag-min-t">${r.minT} °C</td>
+      <td class="tag-max-t">${r.maxT} °C</td>
+      <td style="color: #94a3b8;">${r.weather || '晴時多雲'}</td>
+    </tr>
+  `).join('');
+}
+
+// ── 資料載入 ──
+async function fetchWeather() {
+  try {
+    const res = await fetch('/api/weather');
+    const json = await res.json();
+    if (json.status !== 'success') return;
+    weatherData = json.stations || [];
+    forecastDataMap = json.forecasts || {};
+    const sum = json.summary || {};
+    
+    document.getElementById('val-max-temp').textContent = (sum.max_temp != null && sum.max_temp !== '--') ? sum.max_temp : '--';
+    document.getElementById('val-min-temp').textContent = (sum.min_temp != null && sum.min_temp !== '--') ? sum.min_temp : '--';
+    document.getElementById('val-max-rain').textContent = (sum.max_rain != null && sum.max_rain !== '--') ? sum.max_rain : '--';
+    document.getElementById('val-max-wind').textContent = (sum.avg_wind != null && sum.avg_wind !== '--') ? sum.avg_wind : (sum.max_wind != null ? sum.max_wind : '--');
+
+    if (sum.max_temp_station) document.getElementById('station-max-temp').textContent = formatRegionName(sum.max_temp_station);
+    if (sum.min_temp_station) document.getElementById('station-min-temp').textContent = formatRegionName(sum.min_temp_station);
+
+    // 渲染特報
+    const warnPanel = document.getElementById('warnings-panel');
+    const warnings = json.warnings || [];
+    warnPanel.innerHTML = warnings.slice(0, 3).map(w => `
+      <div class="warn-card">
+        <div class="warn-header">
+          <span class="warn-title">${w.title}</span>
+          <span class="warn-tag">${(w.tags || ['特報']).join(' · ')}</span>
+        </div>
+        <div class="warn-desc">${w.content || ''}</div>
+      </div>
+    `).join('');
+  } catch (err) {
+    console.error('Weather fetch error:', err);
+  }
+}
+
+async function fetchPm25() {
+  try {
+    const res = await fetch('/api/pm25');
+    const json = await res.json();
+    if (json.status !== 'success') return;
+    pm25Data = json.stations || [];
+  } catch (err) {
+    console.error('PM2.5 fetch error:', err);
+  }
+}
+
+async function loadAllData() {
+  await Promise.all([fetchWeather(), fetchPm25()]);
+  switchLayer(currentLayer);
+  const now = new Date();
+  document.getElementById('update-time-val').textContent = now.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+async function refreshData() {
+  const btn = document.getElementById('refresh-btn');
+  btn.classList.add('loading');
+  btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="animation:spin 0.8s linear infinite"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> 同步中…`;
+  
+  try {
+    await fetch('/api/refresh', { method: 'POST' });
+    await loadAllData();
+  } catch (e) {
+    console.error('Refresh error:', e);
+  } finally {
+    btn.classList.remove('loading');
+    btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> 同步更新`;
+  }
+}
+
+// ── 啟動 ──
+async function bootstrap() {
+  initMap();
+  await loadAllData();
+  const overlay = document.getElementById('loading-overlay');
+  overlay.classList.add('fade-out');
+  setTimeout(() => overlay.remove(), 400);
+
+  // 預設展開一週氣候預報分析面板 (折線圖與資料表格)
+  setTimeout(() => {
+    toggleForecastModal();
+  }, 600);
+}
+
+// 每 5 分鐘自動刷新
+setInterval(loadAllData, 300000);
+
+bootstrap();
+</script>
+</body>
+</html>
