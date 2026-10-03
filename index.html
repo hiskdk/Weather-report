@@ -1765,29 +1765,53 @@ async function fetchPm25() {
       return;
     }
 
-    // GitHub Pages 靜態託管降級機制：直接存取 LASS AirBox API
-    const airRes = await fetch('https://pm25.lass-net.org/API-1.0.0/project/airbox/latest/');
-    const airJson = await airRes.json();
-    const feeds = airJson.feeds || [];
+    // GitHub Pages 降級機制 1：嘗試直接存取 LASS AirBox API
+    try {
+      const airRes = await fetch('https://pm25.lass-net.org/API-1.0.0/project/airbox/latest/');
+      const airJson = await airRes.json();
+      const feeds = airJson.feeds || [];
 
-    pm25Data = feeds.map(f => {
-      const lat = parseFloat(f.gps_lat);
-      const lon = parseFloat(f.gps_lon);
-      const pm25 = parseFloat(f.s_d0);
-      if (isNaN(lat) || isNaN(lon) || isNaN(pm25)) return null;
-      if (lat < 21.5 || lat > 25.5 || lon < 119.5 || lon > 122.5) return null;
-      if (pm25 < 0 || pm25 > 200) return null;
+      const mapped = feeds.map(f => {
+        const lat = parseFloat(f.gps_lat);
+        const lon = parseFloat(f.gps_lon);
+        const pm25 = parseFloat(f.s_d0);
+        if (isNaN(lat) || isNaN(lon) || isNaN(pm25)) return null;
+        if (lat < 21.5 || lat > 25.5 || lon < 119.5 || lon > 122.5) return null;
+        if (pm25 < 0 || pm25 > 200) return null;
+        return {
+          name: f.SiteName || f.name || f.device_id,
+          area: f.area || '臺灣',
+          lat: lat, lon: lon,
+          pm25: Math.round(pm25),
+          temp: parseFloat(f.s_t0) || 26,
+          humidity: parseFloat(f.s_h0) || 75
+        };
+      }).filter(Boolean);
 
-      return {
-        name: f.SiteName || f.name || f.device_id,
-        area: f.area || '臺灣',
-        lat: lat,
-        lon: lon,
-        pm25: Math.round(pm25),
-        temp: parseFloat(f.s_t0) || 26,
-        humidity: parseFloat(f.s_h0) || 75
-      };
-    }).filter(Boolean);
+      if (mapped.length > 0) {
+        pm25Data = mapped;
+        return;
+      }
+    } catch (e) {
+      console.warn('LASS API 失敗（可能為 CORS），改用靜態快照', e.message);
+    }
+
+    // GitHub Pages 降級機制 2：讀取靜態 pm25.json 快照
+    try {
+      const staticRes = await fetch('./pm25.json');
+      if (staticRes.ok) {
+        const staticData = await staticRes.json();
+        // 支援兩種格式：直接陣列 或 {status, stations:[...]}
+        const arr = Array.isArray(staticData) ? staticData : (staticData.stations || []);
+        if (arr.length > 0) {
+          pm25Data = arr;
+          console.log(`已載入靜態 PM2.5 快照（${pm25Data.length} 站）`);
+          return;
+        }
+      }
+    } catch (e2) {
+      console.error('靜態 pm25.json 也失敗：', e2);
+    }
 
   } catch (err) {
     console.error('PM2.5 fetch error:', err);
