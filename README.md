@@ -3,6 +3,7 @@
 > 專案結合 **CWA API** × **Python** × **SQLite (`data.db`)** × **Leaflet.js** × **Streamlit**
 
 ---
+https://hiskdk.github.io/Weather-report/
 
 
 1. 左上方即時氣象與四宮格指標卡：
